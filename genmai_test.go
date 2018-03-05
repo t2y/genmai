@@ -438,6 +438,107 @@ func Test_Select(t *testing.T) {
 		}
 	}()
 
+	// SELECT "name" FROM test_model GROUP BY "name";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		type groupedBy struct {
+			Name string
+		}
+		var actual []groupedBy
+		if err := db.Select(&actual, "name", db.From(&testModel{}), db.GroupBy("name")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []groupedBy{
+			{"dup"}, {"other"},
+			{"other1"}, {"other2"},
+			{"test1"}, {"test2"}, {"test3"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "name", "addr" FROM test_model GROUP BY "name", "addr";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		type groupedBy struct {
+			Name string
+			Addr string
+		}
+		var actual []groupedBy
+		if err := db.Select(&actual, []string{"name", "addr"}, db.From(&testModel{}), db.GroupBy("name", "addr")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []groupedBy{
+			{"dup", "dup_addr"}, {"other", "addr4"}, {"other", "addr5"},
+			{"other1", "addr8"}, {"other2", "addr9"},
+			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "name", "addr" FROM test_model GROUP BY "name", "addr";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		type groupedBy struct {
+			Name string
+			Addr string
+		}
+		var actual []groupedBy
+		table := &testModel{}
+		grouping := Grouping{
+			columns: []string{"name", "addr"},
+		}
+		if err := db.Select(&actual, &grouping, db.From(table), db.GroupBy(table, "name", "addr")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []groupedBy{
+			{"dup", "dup_addr"}, {"other", "addr4"}, {"other", "addr5"},
+			{"other1", "addr8"}, {"other2", "addr9"},
+			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
+	// SELECT "name", count("name") FROM test_model GROUP BY "name";
+	func() {
+		db := newTestDB(t)
+		defer db.Close()
+		type groupedBy struct {
+			Name string
+			Cnt  int
+		}
+		var actual []groupedBy
+		grouping := Grouping{
+			columns: []string{"name"},
+			functions: []Function{
+				Function{
+					Name: "COUNT",
+					Args: []interface{}{"name"},
+					As:   "cnt",
+				},
+			},
+		}
+		if err := db.Select(&actual, &grouping, db.From(&testModel{}), db.GroupBy("name")); err != nil {
+			t.Fatal(err)
+		}
+		expected := []groupedBy{
+			{"dup", 2}, {"other", 2},
+			{"other1", 1}, {"other2", 1},
+			{"test1", 1}, {"test2", 1}, {"test3", 1},
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Errorf("Expect %v, but %v", expected, actual)
+		}
+	}()
+
 	// SELECT * FROM test_model ORDER BY "id" DESC LIMIT 2;
 	func() {
 		db := newTestDB(t)

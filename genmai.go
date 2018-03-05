@@ -138,6 +138,11 @@ func (db *DB) Where(cond interface{}, args ...interface{}) *Condition {
 	return newCondition(db).Where(cond, args...)
 }
 
+// GroupBy returns a new Condition of "GROUP BY" clause.
+func (db *DB) GroupBy(table interface{}, column ...interface{}) *Condition {
+	return newCondition(db).GroupBy(table, column...)
+}
+
 // OrderBy returns a new Condition of "ORDER BY" clause.
 func (db *DB) OrderBy(table interface{}, column interface{}, order ...interface{}) *Condition {
 	return newCondition(db).OrderBy(table, column, order...)
@@ -672,14 +677,13 @@ func (db *DB) classify(tableName string, args []interface{}) (column, from strin
 		column = db.columns(tableName, ToInterfaceSlice(t))
 	case *Distinct:
 		column = fmt.Sprintf("DISTINCT %s", db.columns(tableName, ToInterfaceSlice(t.columns)))
-	case *Function:
-		var col string
-		if len(t.Args) == 0 {
-			col = "*"
-		} else {
-			col = db.columns(tableName, t.Args)
+	case *Grouping:
+		column = db.columns(tableName, ToInterfaceSlice(t.columns))
+		if len(t.functions) != 0 {
+			column = column + ", " + db.function_columns(tableName, t.functions)
 		}
-		column = fmt.Sprintf("%s(%s)", t.Name, col)
+	case *Function:
+		column = db.function_columns(tableName, []Function{*t})
 	default:
 		offset--
 	}
@@ -723,6 +727,25 @@ func (db *DB) columns(tableName string, columns []interface{}) string {
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// function_columns returns the comma-separated column name with function.
+func (db *DB) function_columns(tableName string, functions []Function) string {
+	funcs := make([]string, 0, len(functions))
+	for _, f := range functions {
+		var col string
+		if len(f.Args) == 0 {
+			col = "*"
+		} else {
+			col = db.columns(tableName, f.Args)
+		}
+		as := ""
+		if f.As != "" {
+			as = fmt.Sprintf(" AS %s", f.As)
+		}
+		funcs = append(funcs, fmt.Sprintf("%s(%s)%s", f.Name, col, as))
+	}
+	return strings.Join(funcs, ", ")
 }
 
 func (db *DB) collectTableFields(t reflect.Type) (fields []string, err error) {
@@ -1030,6 +1053,11 @@ type Distinct struct {
 	columns []string
 }
 
+type Grouping struct {
+	columns   []string
+	functions []Function
+}
+
 // Function represents a function of SQL.
 type Function struct {
 	// A function name.
@@ -1037,6 +1065,9 @@ type Function struct {
 
 	// function arguments (optional).
 	Args []interface{}
+
+	// alias name (optional).
+	As string
 }
 
 // Order represents a keyword for the "ORDER" clause of SQL.
@@ -1058,6 +1089,7 @@ const (
 	Where Clause = iota
 	And
 	Or
+	GroupBy
 	OrderBy
 	Limit
 	Offset
@@ -1081,6 +1113,7 @@ var clauseStrings = []string{
 	Where:     "WHERE",
 	And:       "AND",
 	Or:        "OR",
+	GroupBy:   "GROUP BY",
 	OrderBy:   "ORDER BY",
 	Limit:     "LIMIT",
 	Offset:    "OFFSET",
@@ -1104,6 +1137,11 @@ type expr struct {
 	op     string      // operator.
 	column *column     // column name.
 	value  interface{} // value.
+}
+
+// groupBy represents a "GROUP BY" query.
+type groupBy struct {
+	column column // column name.
 }
 
 // orderBy represents a "ORDER BY" query.
@@ -1168,6 +1206,31 @@ func (c *Condition) IsNull() *Condition {
 // IsNotNull adds "IS NOT NULL" clause to the Condition and returns it for method chain.
 func (c *Condition) IsNotNull() *Condition {
 	return c.appendQuery(100, IsNotNull, nil)
+}
+
+// GroupBy adds "GROUP BY" clause to the Condition and returns it for method chain.
+func (c *Condition) GroupBy(table interface{}, col ...interface{}) *Condition {
+	tableName := ""
+	if _, ok := table.(string); ok {
+		col = append([]interface{}{table}, col...)
+	} else {
+		rt := reflect.TypeOf(table)
+		for rt.Kind() == reflect.Ptr {
+			rt = rt.Elem()
+		}
+		tableName = c.db.tableName(rt)
+	}
+
+	groupbys := make([]groupBy, 0, len(col))
+	for _, name := range col {
+		column := column{
+			table: tableName,
+			name:  fmt.Sprint(name),
+		}
+		groupby := groupBy{column: column}
+		groupbys = append(groupbys, groupby)
+	}
+	return c.appendQuery(300, GroupBy, groupbys)
 }
 
 // OrderBy adds "ORDER BY" clause to the Condition and returns it for method chain.
@@ -1292,6 +1355,12 @@ func (c *Condition) build(numHolders int, inner bool) (queries []string, args []
 			queries = append(queries, col, e.op, c.db.dialect.PlaceHolder(numHolders))
 			args = append(args, e.value)
 			numHolders++
+		case []groupBy:
+			columns := make([]string, 0, len(e))
+			for _, o := range e {
+				columns = append(columns, ColumnName(c.db.dialect, o.column.table, o.column.name))
+			}
+			queries = append(queries, strings.Join(columns, ", "))
 		case []orderBy:
 			o := e[0]
 			queries = append(queries, ColumnName(c.db.dialect, o.column.table, o.column.name), o.order.String())
