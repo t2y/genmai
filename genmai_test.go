@@ -446,7 +446,7 @@ func Test_Select(t *testing.T) {
 			Name string
 		}
 		var actual []groupedBy
-		if err := db.Select(&actual, "name", db.From(&testModel{}), db.GroupBy("name")); err != nil {
+		if err := db.Select(&actual, "name", db.From(&testModel{}), db.GroupBy("name"), db.OrderBy("name", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []groupedBy{
@@ -468,13 +468,13 @@ func Test_Select(t *testing.T) {
 			Addr string
 		}
 		var actual []groupedBy
-		if err := db.Select(&actual, []string{"name", "addr"}, db.From(&testModel{}), db.GroupBy("name", "addr")); err != nil {
+		if err := db.Select(&actual, []string{"name", "addr"}, db.From(&testModel{}), db.GroupBy("name", "addr"), db.OrderBy("addr", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []groupedBy{
-			{"dup", "dup_addr"}, {"other", "addr4"}, {"other", "addr5"},
-			{"other1", "addr8"}, {"other2", "addr9"},
-			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"},
+			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"}, {"other", "addr4"},
+			{"other", "addr5"}, {"other1", "addr8"}, {"other2", "addr9"},
+			{"dup", "dup_addr"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -494,13 +494,13 @@ func Test_Select(t *testing.T) {
 		grouping := Grouping{
 			columns: []string{"name", "addr"},
 		}
-		if err := db.Select(&actual, &grouping, db.From(table), db.GroupBy(table, "name", "addr")); err != nil {
+		if err := db.Select(&actual, &grouping, db.From(table), db.GroupBy(table, "name", "addr"), db.OrderBy("addr", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []groupedBy{
-			{"dup", "dup_addr"}, {"other", "addr4"}, {"other", "addr5"},
-			{"other1", "addr8"}, {"other2", "addr9"},
-			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"},
+			{"test1", "addr1"}, {"test2", "addr2"}, {"test3", "addr3"}, {"other", "addr4"},
+			{"other", "addr5"}, {"other1", "addr8"}, {"other2", "addr9"},
+			{"dup", "dup_addr"},
 		}
 		if !reflect.DeepEqual(actual, expected) {
 			t.Errorf("Expect %v, but %v", expected, actual)
@@ -526,7 +526,7 @@ func Test_Select(t *testing.T) {
 				},
 			},
 		}
-		if err := db.Select(&actual, &grouping, db.From(&testModel{}), db.GroupBy("name")); err != nil {
+		if err := db.Select(&actual, &grouping, db.From(&testModel{}), db.GroupBy("name"), db.OrderBy("name", ASC)); err != nil {
 			t.Fatal(err)
 		}
 		expected := []groupedBy{
